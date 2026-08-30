@@ -33,7 +33,7 @@ from .cloud import (
     fetch_groupkey,
     parse_redirect_url,
 )
-from .enrollment import mdns_discover_household
+from .enrollment import mdns_discover_household, mdns_household_ids
 from .const import (
     CONF_COUNTRY,
     CONF_DEVICES,
@@ -139,6 +139,18 @@ class MieleLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+
+    async def _lan_group_ids(self) -> set[str]:
+        """Households mDNS can see here, used to disambiguate a multi-household
+        account. Best-effort: a failure just means we fall back to guessing."""
+        try:
+            from homeassistant.components import zeroconf as ha_zc
+            shared_zc = await ha_zc.async_get_async_instance(self.hass)
+            return await mdns_household_ids(timeout=4.0, zeroconf=shared_zc)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("LAN household browse failed (ignored): %s", err)
+            return set()
+
     async def _finalise_cloud(self, code: str) -> FlowResult:
         """Exchange the code, fetch the household, create the config entry."""
         assert self._challenge is not None
@@ -152,12 +164,15 @@ class MieleLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             refresh = tokens.get("refresh_token")
             if not access or not refresh:
                 return self.async_abort(reason="oauth_failed")
-            # Region from country code (very simple mapping — extend later).
-            region = "EU"
-            if self._challenge.cc in ("us",):
-                region = "EU2"  # placeholder; real US region TBD
             try:
-                groupkey = await fetch_groupkey(session, access, region=region)
+                # No region argument: let fetch_groupkey find the backend that
+                # actually holds this household, and record what it settled on.
+                # The LAN groups pick the right household if the account owns
+                # more than one.
+                groupkey = await fetch_groupkey(
+                    session, access, cc=self._challenge.cc,
+                    prefer_group_ids=await self._lan_group_ids(),
+                )
             except Exception as err:  # noqa: BLE001
                 _LOGGER.warning("GroupKey fetch failed: %s", err)
                 return self.async_abort(reason="groupkey_failed")
@@ -169,7 +184,7 @@ class MieleLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data={
                 "flow_kind": "cloud",
                 CONF_COUNTRY: self._challenge.cc,
-                CONF_REGION: region,
+                CONF_REGION: groupkey.region,
                 CONF_REFRESH_TOKEN: refresh,
                 CONF_GROUP_ID: groupkey.group_id,
                 CONF_GROUP_KEY: groupkey.group_key,
@@ -194,12 +209,12 @@ class MieleLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not access or not refresh:
                 errors["base"] = "invalid_token"
             else:
-                region = "EU"
-                if cc == "us":
-                    region = "EU2"
                 async with aiohttp.ClientSession() as session:
                     try:
-                        groupkey = await fetch_groupkey(session, access, region=region)
+                        groupkey = await fetch_groupkey(
+                            session, access, cc=cc,
+                            prefer_group_ids=await self._lan_group_ids(),
+                        )
                     except Exception as err:  # noqa: BLE001
                         _LOGGER.warning("GroupKey fetch failed: %s", err)
                         return self.async_abort(reason="groupkey_failed")
@@ -210,7 +225,7 @@ class MieleLanConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data={
                         "flow_kind": "cloud",
                         CONF_COUNTRY: cc,
-                        CONF_REGION: region,
+                        CONF_REGION: groupkey.region,
                         CONF_REFRESH_TOKEN: refresh,
                         CONF_GROUP_ID: groupkey.group_id,
                         CONF_GROUP_KEY: groupkey.group_key,
