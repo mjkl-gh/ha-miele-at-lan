@@ -66,3 +66,7 @@ def test_existing_timer_array_takes_precedence() -> None:
         {"PlateRemainingMinutes": [12], "ExtendedState": ""},
         0,
     ) == 12
+
+
+def test_zero_timer_is_none() -> None:
+    assert _hob_remaining_minutes({"PlateRemainingMinutes": [0]}, 0) is None
