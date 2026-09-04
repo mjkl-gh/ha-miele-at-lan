@@ -222,7 +222,7 @@ def _hob_remaining_minutes(state: dict[str, Any], zone: int) -> int | None:
     remaining = state.get("PlateRemainingMinutes")
     if isinstance(remaining, list) and zone < len(remaining):
         value = remaining[zone]
-        return value if isinstance(value, int) else None
+        return value if isinstance(value, int) and value > 0 else None
 
     ext = parse_hob_extended_state(state.get("ExtendedState"))
     if ext and zone < len(ext.zones):

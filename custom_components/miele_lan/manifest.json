@@ -16,7 +16,7 @@
     "asyncmiele==0.2.6",
     "cryptography>=41.0.0"
   ],
-  "version": "1.9.0-hob-debug.4",
+  "version": "1.9.0-hob-debug.5",
   "zeroconf": [
     {
       "type": "_mieleathome._tcp.local."
