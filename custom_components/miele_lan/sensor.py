@@ -177,13 +177,43 @@ def _hob_plate_step(state: dict[str, Any], zone: int) -> str | None:
     EK039W) the booster lives in `ExtendedState` and *not* in `PlateStep`,
     so this dual lookup is the only way to surface boost over LAN.
     """
+    ext = parse_hob_extended_state(state.get("ExtendedState"))
+    if ext and zone < len(ext.zones):
+        if ext.zones[zone].booster:
+            return f"boost_{ext.zones[zone].booster}"
+        # KM8684 omits PlateStep from /State and exposes the same raw
+        # power/residual-heat codes in ExtendedState instead.
+        plate = state.get("PlateStep")
+        if not isinstance(plate, list) or zone >= len(plate):
+            return enums.HobPlateStep.get(ext.zones[zone].power_level)
+
     plate = state.get("PlateStep") or []
     if zone >= len(plate):
         return None
-    ext = parse_hob_extended_state(state.get("ExtendedState"))
-    if ext and zone < len(ext.zones) and ext.zones[zone].booster:
-        return f"boost_{ext.zones[zone].booster}"
     return enums.HobPlateStep.get(plate[zone])
+
+
+def _hob_remaining_heat(state: dict[str, Any], zone: int) -> str | None:
+    """Read residual heat from /State, falling back to ExtendedState."""
+    remaining = state.get("PlateRemainingHeat")
+    if isinstance(remaining, list) and zone < len(remaining):
+        return enums.HobRemainingHeat.get(remaining[zone])
+
+    ext = parse_hob_extended_state(state.get("ExtendedState"))
+    if ext and zone < len(ext.zones):
+        raw = ext.zones[zone].power_level
+        residual_heat = {
+            100: "low",
+            101: "low",
+            102: "medium",
+            103: "high",
+            104: "low",
+            105: "low",
+            106: "medium",
+            107: "high",
+        }
+        return residual_heat.get(raw)
+    return None
 
 
 def _temp_or_none(temps: Any, idx: int, *, divisor: int = 100) -> int | float | None:
@@ -536,11 +566,7 @@ SENSOR_TYPES: tuple[MieleLanSensorDef, ...] = (
             description=MieleLanSensorDescription(
                 key=f"plate_{n}_remaining_heat",
                 translation_key=f"plate_{n}_remaining_heat",
-                value_fn=lambda s, _i=n - 1: (
-                    enums.HobRemainingHeat.get((s.get("PlateRemainingHeat") or [0])[_i])
-                    if _i < len(s.get("PlateRemainingHeat") or [])
-                    else None
-                ),
+                value_fn=lambda s, _i=n - 1: _hob_remaining_heat(s, _i),
             ),
         )
         for n in range(1, 7)
