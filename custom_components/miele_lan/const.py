@@ -157,6 +157,12 @@ HOB_FAMILY: tuple[MieleAppliance, ...] = (
     MieleAppliance.HOB_INDUCT_EXTR,
 )
 
+
+def hob_zone_count(ident: dict[str, object]) -> int:
+    """Return the number of cooking zones exposed by a known hob model."""
+    return 5 if str(ident.get("tech_type", "")).upper() == "KM8684" else 6
+
+
 COOLING_FAMILY: tuple[MieleAppliance, ...] = (
     MieleAppliance.FRIDGE,
     MieleAppliance.FREEZER,

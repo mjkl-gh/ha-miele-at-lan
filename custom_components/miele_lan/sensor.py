@@ -31,6 +31,7 @@ from .const import (
     DISHWASHER_FAMILY,
     DOMAIN,
     HOB_FAMILY,
+    hob_zone_count,
     IDLE_STATUSES,
     LAUNDRY_FAMILY,
     OVEN_FAMILY,
@@ -212,7 +213,7 @@ def _hob_remaining_heat(state: dict[str, Any], zone: int) -> str | None:
             106: "medium",
             107: "high",
         }
-        return residual_heat.get(raw)
+        return residual_heat.get(raw, "none" if 0 <= raw <= 23 else None)
     return None
 
 
@@ -912,10 +913,15 @@ async def async_setup_entry(
         dt = coord.device_type
         temp_zones = _present_temperature_zones(coord)
         state = coord.data.state if coord.data else {}
+        zone_count = hob_zone_count(coord.data.ident if coord.data else {})
         for d in SENSOR_TYPES:
             if dt not in d.types:
                 continue
             key = d.description.key
+            if key.startswith(("plate_", "cooktop_timer_")):
+                zone_number = key.split("_")[1] if key.startswith("plate_") else None
+                if zone_number and int(zone_number) > zone_count:
+                    continue
             # Skip per-zone temperature sensors for absent zones (e.g. zone 3
             # on a 2-compartment fridge-freezer where Temperature[2] == -32768).
             if key.startswith("temperature_zone_") or key.startswith("target_temperature_zone_"):

@@ -21,6 +21,7 @@ from .const import (
     DOMAIN,
     DOORED_FAMILY,
     HOB_FAMILY,
+    hob_zone_count,
     LAUNDRY_FAMILY,
     WINE_FAMILY,
     MieleAppliance,
@@ -258,10 +259,13 @@ async def async_setup_entry(
     for coord in coordinators.values():
         dt = coord.device_type
         door_zones = _present_door_zones(coord)
+        zone_count = hob_zone_count(coord.data.ident if coord.data else {})
         for d in BINARY_SENSOR_TYPES:
             if dt not in d.types:
                 continue
             key = d.description.key
+            if key.startswith("plate_") and int(key.split("_")[1]) > zone_count:
+                continue
             # Skip per-zone door sensors for absent zones (e.g. zone 3 on a
             # 2-compartment fridge-freezer).
             if key.startswith("door_zone_"):
