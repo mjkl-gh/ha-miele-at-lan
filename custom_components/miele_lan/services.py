@@ -19,17 +19,25 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 
 from .const import DOMAIN
-from .dop2_dump import ANY_HTTP_STATUS, build_dop2_resource, bytes_to_hex
+from .dop2_dump import (
+    ALLOWED_REST_RESOURCES,
+    ANY_HTTP_STATUS,
+    build_dop2_resource,
+    build_rest_resource,
+    bytes_to_hex,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 SERVICE_DUMP_DOP2_LEAF = "dump_dop2_leaf"
+SERVICE_DUMP_REST_RESOURCE = "dump_rest_resource"
 
 ATTR_DEVICE_ID = "device_id"
 ATTR_UNIT = "unit"
 ATTR_ATTRIBUTE = "attribute"
 ATTR_IDX1 = "idx1"
 ATTR_IDX2 = "idx2"
+ATTR_RESOURCE = "resource"
 
 _DOP2_INDEX = vol.All(vol.Coerce(int), vol.Range(min=0, max=65535))
 
@@ -40,6 +48,13 @@ DUMP_DOP2_LEAF_SCHEMA = vol.Schema(
         vol.Required(ATTR_ATTRIBUTE): _DOP2_INDEX,
         vol.Optional(ATTR_IDX1, default=0): _DOP2_INDEX,
         vol.Optional(ATTR_IDX2, default=0): _DOP2_INDEX,
+    }
+)
+
+DUMP_REST_RESOURCE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_DEVICE_ID): cv.string,
+        vol.Required(ATTR_RESOURCE): vol.In(ALLOWED_REST_RESOURCES),
     }
 )
 
@@ -102,18 +117,57 @@ async def _async_dump_dop2_leaf(call: ServiceCall) -> ServiceResponse:
     }
 
 
+async def _async_dump_rest_resource(call: ServiceCall) -> ServiceResponse:
+    """Read-only GET of a plain REST resource (e.g. `/State`); never writes.
+
+    Useful when a device's firmware doesn't implement DOP2 at all (every
+    `dump_dop2_leaf` call 404s) but plain REST resources like `/State` still
+    answer fine — e.g. to capture the raw `ExtendedState` hex blob for a hob
+    model not yet covered by `extended_state.py`.
+    """
+    hass = call.hass
+    device_id = call.data[ATTR_DEVICE_ID]
+    resource_name = call.data[ATTR_RESOURCE]
+
+    fab = _resolve_fab(hass, device_id)
+    coordinator = _resolve_coordinator(hass, device_id, fab)
+
+    resource = build_rest_resource(fab, resource_name)
+    try:
+        status, body = await coordinator.client.raw._request_bytes(
+            "GET", resource, allowed_status=ANY_HTTP_STATUS,
+        )
+    except (NetworkConnectionError, NetworkTimeoutError) as err:
+        raise HomeAssistantError(f"Could not reach the appliance: {err}") from err
+
+    return {
+        "resource": resource_name,
+        "status": status,
+        "length": len(body),
+        "hex": bytes_to_hex(body),
+        "text": body.decode("utf-8", errors="replace"),
+    }
+
+
 @callback
 def async_setup_services(hass: HomeAssistant) -> None:
     """Register domain services once, regardless of how many entries call this."""
-    if hass.services.has_service(DOMAIN, SERVICE_DUMP_DOP2_LEAF):
-        return
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_DUMP_DOP2_LEAF,
-        _async_dump_dop2_leaf,
-        schema=DUMP_DOP2_LEAF_SCHEMA,
-        supports_response=SupportsResponse.ONLY,
-    )
+    if not hass.services.has_service(DOMAIN, SERVICE_DUMP_DOP2_LEAF):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_DUMP_DOP2_LEAF,
+            _async_dump_dop2_leaf,
+            schema=DUMP_DOP2_LEAF_SCHEMA,
+            supports_response=SupportsResponse.ONLY,
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_DUMP_REST_RESOURCE):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_DUMP_REST_RESOURCE,
+            _async_dump_rest_resource,
+            schema=DUMP_REST_RESOURCE_SCHEMA,
+            supports_response=SupportsResponse.ONLY,
+        )
 
 
 @callback
@@ -122,3 +176,4 @@ def async_remove_services(hass: HomeAssistant) -> None:
     if hass.config_entries.async_loaded_entries(DOMAIN):
         return
     hass.services.async_remove(DOMAIN, SERVICE_DUMP_DOP2_LEAF)
+    hass.services.async_remove(DOMAIN, SERVICE_DUMP_REST_RESOURCE)

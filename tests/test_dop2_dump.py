@@ -14,8 +14,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from custom_components.miele_lan.dop2_dump import (  # noqa: E402
+    ALLOWED_REST_RESOURCES,
     ANY_HTTP_STATUS,
     build_dop2_resource,
+    build_rest_resource,
     bytes_to_hex,
 )
 from custom_components.miele_lan.services import (  # noqa: E402
@@ -23,8 +25,10 @@ from custom_components.miele_lan.services import (  # noqa: E402
     ATTR_DEVICE_ID,
     ATTR_IDX1,
     ATTR_IDX2,
+    ATTR_RESOURCE,
     ATTR_UNIT,
     DUMP_DOP2_LEAF_SCHEMA,
+    DUMP_REST_RESOURCE_SCHEMA,
 )
 
 
@@ -81,3 +85,50 @@ def test_schema_rejects_out_of_range_unit() -> None:
         DUMP_DOP2_LEAF_SCHEMA(
             {ATTR_DEVICE_ID: "abc123", ATTR_UNIT: 999999, ATTR_ATTRIBUTE: 1585}
         )
+
+
+# ------------------------------------------------------- dump_rest_resource
+def test_build_rest_resource_state() -> None:
+    assert (
+        build_rest_resource("000000000000", "State")
+        == "/Devices/000000000000/State"
+    )
+
+
+def test_build_rest_resource_ident() -> None:
+    assert (
+        build_rest_resource("000000000000", "Ident")
+        == "/Devices/000000000000/Ident"
+    )
+
+
+def test_build_rest_resource_extended_state() -> None:
+    assert (
+        build_rest_resource("000000000000", "State.ExtendedState")
+        == "/Devices/000000000000/State.ExtendedState"
+    )
+
+
+def test_build_rest_resource_rejects_unknown_resource() -> None:
+    with pytest.raises(ValueError):
+        build_rest_resource("000000000000", "DOP2/2/1585")
+
+
+def test_allowed_rest_resources_contains_state_and_ident() -> None:
+    assert "State" in ALLOWED_REST_RESOURCES
+    assert "Ident" in ALLOWED_REST_RESOURCES
+
+
+def test_rest_resource_schema_requires_device_id_and_resource() -> None:
+    with pytest.raises(vol.Invalid):
+        DUMP_REST_RESOURCE_SCHEMA({ATTR_RESOURCE: "State"})
+
+
+def test_rest_resource_schema_rejects_resource_outside_allow_list() -> None:
+    with pytest.raises(vol.Invalid):
+        DUMP_REST_RESOURCE_SCHEMA({ATTR_DEVICE_ID: "abc123", ATTR_RESOURCE: "DOP2/2/1585"})
+
+
+def test_rest_resource_schema_accepts_known_resource() -> None:
+    result = DUMP_REST_RESOURCE_SCHEMA({ATTR_DEVICE_ID: "abc123", ATTR_RESOURCE: "State"})
+    assert result[ATTR_RESOURCE] == "State"

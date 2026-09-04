@@ -22,3 +22,26 @@ def build_dop2_resource(
 def bytes_to_hex(data: bytes) -> str:
     """Lowercase hex dump of a leaf body, safe to paste into a GitHub issue."""
     return data.hex()
+
+
+# Resource names allowed for the generic `dump_rest_resource` debug service.
+# Kept as an allow-list (rather than free-form path building) so the service
+# can only ever GET the handful of plain-JSON resources the integration
+# itself already reads — never a DOP2 leaf (use `dump_dop2_leaf` for that)
+# and never a write-capable path.
+ALLOWED_REST_RESOURCES: tuple[str, ...] = ("Ident", "State", "State.ExtendedState")
+
+
+def build_rest_resource(fab: str, resource_name: str) -> str:
+    """Build a plain `/Devices/{fab}/{resource_name}` REST resource path.
+
+    Some appliances (notably some hobs) don't implement DOP2 at all and
+    answer 404 to every `/DOP2/...` leaf, while still answering fine on the
+    plain REST resources such as `/State`. This lets users capture the raw
+    JSON straight from the appliance for debugging — e.g. to see the actual
+    length/shape of the hex-encoded `ExtendedState` blob on a model that
+    isn't yet covered by `extended_state.py`.
+    """
+    if resource_name not in ALLOWED_REST_RESOURCES:
+        raise ValueError(f"unsupported resource: {resource_name!r}")
+    return f"/Devices/{fab}/{resource_name}"
