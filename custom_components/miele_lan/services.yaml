@@ -37,3 +37,20 @@ dump_dop2_leaf:
           min: 0
           max: 65535
           mode: box
+
+dump_rest_resource:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: miele_lan
+    resource:
+      required: true
+      example: State
+      selector:
+        select:
+          options:
+            - "Ident"
+            - "State"
+            - "State.ExtendedState"
