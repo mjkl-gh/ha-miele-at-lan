@@ -217,6 +217,20 @@ def _hob_remaining_heat(state: dict[str, Any], zone: int) -> str | None:
     return None
 
 
+def _hob_remaining_minutes(state: dict[str, Any], zone: int) -> int | None:
+    """Read a hob zone timer, falling back to ExtendedState."""
+    remaining = state.get("PlateRemainingMinutes")
+    if isinstance(remaining, list) and zone < len(remaining):
+        value = remaining[zone]
+        return value if isinstance(value, int) else None
+
+    ext = parse_hob_extended_state(state.get("ExtendedState"))
+    if ext and zone < len(ext.zones):
+        value = ext.zones[zone].duration_minutes
+        return value if value > 0 else None
+    return None
+
+
 def _temp_or_none(temps: Any, idx: int, *, divisor: int = 100) -> int | float | None:
     """Read the i-th element of /State.Temperature (or .TargetTemperature).
     Returns None for the `-32768` sentinel (unsupported)."""
@@ -581,7 +595,7 @@ SENSOR_TYPES: tuple[MieleLanSensorDef, ...] = (
                 device_class=SensorDeviceClass.DURATION,
                 native_unit_of_measurement=UnitOfTime.MINUTES,
                 value_fn=lambda s, _i=n - 1:
-                    s.get("PlateRemainingMinutes", [])[_i] if _i < len(s.get("PlateRemainingMinutes", [])) else None,
+                    _hob_remaining_minutes(s, _i),
             ),
         )
         for n in range(1, 7)
