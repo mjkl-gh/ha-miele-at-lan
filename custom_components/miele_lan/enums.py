@@ -7,6 +7,20 @@ Extracted 2026-05-21. To refresh, re-run the extractor in tools/.
 from __future__ import annotations
 
 
+# Residual-heat power-level codes (100-107, also seen inside ExtendedState's
+# per-zone PowerLevel byte). Two different consumers need two different
+# vocabularies for the same codes — HobPlateStep below prefixes them
+# "residual_heat_*" to sit alongside its other PlateStep labels, while the
+# plate_N_remaining_heat sensor declares the bare "none"/"low"/"medium"/"high"
+# states (see strings.json). Both derive from this table so they can't drift
+# apart.
+RESIDUAL_HEAT_LEVELS: dict[int, str] = {
+    100: "low",  101: "low",
+    102: "medium", 103: "high",
+    104: "low",  105: "low",
+    106: "medium", 107: "high",
+}
+
 # Hand-RE'd from `Miele.Modules.Hobs.UI.dll:5970-6086` (`MapPowerlevelToLevel`)
 # — what the iOS app actually shows for `PlateStep` raw values.
 HobPlateStep: dict[int, str] = {
@@ -18,10 +32,7 @@ HobPlateStep: dict[int, str] = {
     17: "9", 18: "9.5", 19: "10", 20: "10.5",
     21: "11", 22: "11.5", 23: "12",
     # 100-107: residual heat encoded in PlateStep itself
-    100: "residual_heat_low",  101: "residual_heat_low",
-    102: "residual_heat_medium", 103: "residual_heat_high",
-    104: "residual_heat_low",  105: "residual_heat_low",
-    106: "residual_heat_medium", 107: "residual_heat_high",
+    **{code: f"residual_heat_{level}" for code, level in RESIDUAL_HEAT_LEVELS.items()},
     110: "keep_warm", 220: "keep_warm",
     # booster via MAPPI bridge (PlatePowerStep enum values):
     117: "boost", 118: "boost", 218: "boost",

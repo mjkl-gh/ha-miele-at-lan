@@ -195,17 +195,7 @@ def _hob_remaining_heat(state: dict[str, Any], zone: int) -> str | None:
     ext = parse_hob_extended_state(state.get("ExtendedState"))
     if ext and zone < len(ext.zones):
         raw = ext.zones[zone].power_level
-        residual_heat = {
-            100: "low",
-            101: "low",
-            102: "medium",
-            103: "high",
-            104: "low",
-            105: "low",
-            106: "medium",
-            107: "high",
-        }
-        return residual_heat.get(raw, "none" if 0 <= raw <= 23 else None)
+        return enums.RESIDUAL_HEAT_LEVELS.get(raw, "none" if 0 <= raw <= 23 else None)
     return None
 
 

@@ -1,5 +1,9 @@
 """Tests for hob state fallbacks used by newer Miele hob firmware."""
 
+import json
+from pathlib import Path
+
+from custom_components.miele_lan import enums
 from custom_components.miele_lan.sensor import (
     _hob_plate_step,
     _hob_remaining_heat,
@@ -8,6 +12,11 @@ from custom_components.miele_lan.sensor import (
 from custom_components.miele_lan.extended_state import (
     hob_zone_count,
     parse_hob_extended_state,
+)
+
+_STRINGS_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "custom_components" / "miele_lan" / "strings.json"
 )
 
 
@@ -97,3 +106,20 @@ def test_existing_timer_array_takes_precedence() -> None:
 
 def test_zero_timer_is_none() -> None:
     assert _hob_remaining_minutes({"PlateRemainingMinutes": [0]}, 0) is None
+
+
+def test_residual_heat_codes_defined_once() -> None:
+    # HobPlateStep's "residual_heat_*" labels must derive from the exact same
+    # code->severity table the plain plate_N_remaining_heat vocabulary uses,
+    # so the two families of sensor can never disagree about a given code.
+    for code, level in enums.RESIDUAL_HEAT_LEVELS.items():
+        assert enums.HobPlateStep[code] == f"residual_heat_{level}"
+
+
+def test_residual_heat_matches_declared_sensor_states() -> None:
+    strings = json.loads(_STRINGS_PATH.read_text())
+    declared = set(
+        strings["entity"]["sensor"]["plate_1_remaining_heat"]["state"]
+    )
+    assert declared == {"none", "low", "medium", "high"}
+    assert set(enums.RESIDUAL_HEAT_LEVELS.values()) <= declared
