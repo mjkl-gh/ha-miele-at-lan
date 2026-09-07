@@ -5,7 +5,10 @@ from custom_components.miele_lan.sensor import (
     _hob_remaining_heat,
     _hob_remaining_minutes,
 )
-from custom_components.miele_lan.const import hob_zone_count
+from custom_components.miele_lan.extended_state import (
+    hob_zone_count,
+    parse_hob_extended_state,
+)
 
 
 KM8684_ACTIVE = (
@@ -44,8 +47,32 @@ def test_existing_state_arrays_take_precedence() -> None:
 
 
 def test_km8684_has_five_zones() -> None:
-    assert hob_zone_count({"tech_type": "KM8684"}) == 5
-    assert hob_zone_count({"tech_type": "KM7576"}) == 6
+    # Byte 7 (Kochfeldinformationen) = 0x0B: (0x0B >> 1) & 0xF == 5 stations.
+    assert hob_zone_count({"ExtendedState": KM8684_ACTIVE}) == 5
+    ext = parse_hob_extended_state(KM8684_ACTIVE)
+    assert len(ext.zones) == 5
+
+
+def test_zone_count_defaults_to_six_without_extended_state() -> None:
+    assert hob_zone_count({}) == 6
+
+
+def test_zone_count_falls_back_to_six_when_byte_is_zero() -> None:
+    blob = bytearray(56)
+    blob[7] = 0x00
+    state = {"ExtendedState": bytes(blob).hex()}
+
+    assert hob_zone_count(state) == 6
+    assert len(parse_hob_extended_state(state["ExtendedState"]).zones) == 6
+
+
+def test_zone_count_falls_back_to_six_when_out_of_range() -> None:
+    blob = bytearray(56)
+    blob[7] = 0x3F  # (0x3F >> 1) & 0xF == 15, > 6
+    state = {"ExtendedState": bytes(blob).hex()}
+
+    assert hob_zone_count(state) == 6
+    assert len(parse_hob_extended_state(state["ExtendedState"]).zones) == 6
 
 
 def test_km8684_timer_falls_back_to_extended_state() -> None:

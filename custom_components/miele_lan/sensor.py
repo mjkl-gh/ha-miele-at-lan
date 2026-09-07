@@ -24,14 +24,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import enums
-from .extended_state import parse_hob_extended_state
+from .extended_state import hob_zone_count, parse_hob_extended_state
 from .const import (
     COOLING_FAMILY,
     CYCLE_FAMILY,
     DISHWASHER_FAMILY,
     DOMAIN,
     HOB_FAMILY,
-    hob_zone_count,
     LAUNDRY_FAMILY,
     OVEN_FAMILY,
     WINE_FAMILY,
@@ -963,7 +962,7 @@ async def async_setup_entry(
         dt = coord.device_type
         temp_zones = _present_temperature_zones(coord)
         state = coord.data.state if coord.data else {}
-        zone_count = hob_zone_count(coord.data.ident if coord.data else {})
+        zone_count = hob_zone_count(state)
         for d in SENSOR_TYPES:
             if dt not in d.types:
                 continue

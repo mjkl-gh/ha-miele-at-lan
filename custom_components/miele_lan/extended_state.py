@@ -17,7 +17,7 @@ bits 6-7 = 01 = Boost I):
        4    u8    Type
        5    u8    CommonError
        6    u8    CommonInformation
-       7    u8    Information
+       7    u8    Kochfeldinformationen         — bitfield (see below)
      8+3n   u8    PowerLevelZone<n+1>           (n = 0..5)
      9+3n   u8    InfoZone<n+1>                 — bitfield (see below)
     10+3n   u8    ErrorHintZone<n+1>
@@ -35,6 +35,15 @@ The InfoZone byte is a `Info_Kochstelle_Kochstelle_<n>` bitfield (LSB-numbered):
     bit 5   Topfgroesse_VZ2    — pot fits VarioZone 2
     bit 6-7 Boosterfunktion    — 0 off, 1 Boost I, 2 Boost II, 3 Boost III
 
+The Kochfeldinformationen byte (offset 7) is a bitfield too; the only part
+the official app reads from it (`GetExistingCooktops()` in the same DLL) is:
+
+    bits 1-4  Anzahl_der_Kochstellen  — number of installed cooking zones
+
+The app gates `Cooktop1..6` purely on this count, no model lookup. We mirror
+that — see `_station_count` — but it is unverified against a live hob, so a
+decoded 0 or >6 falls back to the historical assumption of 6 zones.
+
 The trailing 6 bytes (offsets 56–61) hold reserved / vendor-specific data
 not covered by the public APK struct; we ignore them.
 """
@@ -50,6 +59,16 @@ from dataclasses import dataclass
 
 def _bit(byte: int, n: int) -> bool:
     return bool((byte >> n) & 1)
+
+
+def _station_count(kochfeldinformationen: int) -> int:
+    """Number of cooking zones from Anzahl_der_Kochstellen (bits 1-4).
+
+    Falls back to 6 for 0 or >6 — unverified against a live hob, so firmware
+    that reports something we can't trust must keep behaving as it always has.
+    """
+    count = (kochfeldinformationen >> 1) & 0x0F
+    return count if 1 <= count <= 6 else 6
 
 
 @dataclass(frozen=True)
@@ -82,8 +101,8 @@ class HobExtended:
     type_code: int
     common_error: int
     common_information: int
-    information: int
-    zones: tuple[HobZone, ...]   # 6 zones, index 0 = zone 1
+    kochfeldinformationen: int
+    zones: tuple[HobZone, ...]   # index 0 = zone 1; len() == station count
 
     @property
     def cooktop_timer_minutes(self) -> int:
@@ -106,7 +125,7 @@ def parse_hob_extended_state(hex_str: str | None) -> HobExtended | None:
         return None
 
     zones: list[HobZone] = []
-    for n in range(6):
+    for n in range(_station_count(b[7])):
         power = b[8 + 3 * n]
         info = b[9 + 3 * n]
         err = b[10 + 3 * n]
@@ -135,6 +154,16 @@ def parse_hob_extended_state(hex_str: str | None) -> HobExtended | None:
         type_code=b[4],
         common_error=b[5],
         common_information=b[6],
-        information=b[7],
+        kochfeldinformationen=b[7],
         zones=tuple(zones),
     )
+
+
+def hob_zone_count(state: dict) -> int:
+    """Number of cooking zones for gating per-zone entities, from `/State`.
+
+    6 when `ExtendedState` is missing or unparseable — the same default
+    `_station_count` falls back to for an unverified/zeroed byte.
+    """
+    ext = parse_hob_extended_state(state.get("ExtendedState"))
+    return len(ext.zones) if ext else 6
